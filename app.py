@@ -1,79 +1,88 @@
 import streamlit as st
-import datetime
+from docx import Document
+from io import BytesIO
+import re
 
-# ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Mobile Permission Access Portal", page_icon="📱", layout="centered")
+st.set_page_config(page_title="Smart CV Builder", page_icon="🧠")
 
-st.title("📱 Mobile Permission Access Portal")
-st.caption("By Nabeel | Streamlit Web App")
-
-st.markdown("""
-Welcome!  
-This page demonstrates **secure and permission-based access** to mobile data through your browser.  
-Each permission is optional and requires **explicit user consent**.
+st.title("🧠 Smart CV Builder")
+st.write("""
+Upload a **CV Template (.docx)** file with placeholders (like `{{name}}`, `{{summary}}`, etc.).
+The app will:
+1️⃣ Detect all placeholders,  
+2️⃣ Ask you to fill details,  
+3️⃣ Automatically **remove blank sections** in the final CV.
 """)
 
-st.markdown("---")
+# --- Step 1: Upload Template ---
+uploaded_file = st.file_uploader("📄 Upload Template (.docx)", type=["docx"])
 
-# ---------- CAMERA ----------
-st.subheader("🎥 Step 1: Camera Access")
-camera_image = st.camera_input("Take a photo (optional)")
-if camera_image:
-    st.success("✅ Photo captured successfully!")
-    st.image(camera_image, caption="Captured Image", use_column_width=True)
-
-# ---------- AUDIO ----------
-st.subheader("🎤 Step 2: Audio Upload")
-audio_file = st.file_uploader("Upload an audio file (optional)", type=["mp3", "wav", "m4a"])
-if audio_file:
-    st.audio(audio_file)
-    st.success(f"✅ Uploaded audio: {audio_file.name}")
-
-# ---------- LOCATION ----------
-st.subheader("📍 Step 3: Location Access")
-st.write("Click the button below to share your current location (browser will ask permission).")
-
-get_location = st.button("📍 Share My Location")
-if get_location:
-    st.components.v1.html(
-        """
-        <script>
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const coords = pos.coords.latitude + "," + pos.coords.longitude;
-            const py = parent.document.querySelector('iframe[srcdoc]').contentWindow.streamlit;
-            py.setComponentValue("user_location", coords);
-          },
-          (err) => alert("Permission denied or error getting location.")
-        );
-        </script>
-        """, height=0
-    )
-
-user_location = st.session_state.get("user_location", None)
-if user_location:
-    st.success(f"✅ Location received: {user_location}")
-
-# ---------- FILE UPLOAD ----------
-st.subheader("📂 Step 4: File Upload")
-uploaded_file = st.file_uploader("Upload any document, image, or file (optional)")
 if uploaded_file:
-    st.success(f"✅ File received: {uploaded_file.name}")
+    doc = Document(uploaded_file)
 
-# ---------- SUMMARY ----------
-st.markdown("---")
-st.header("📊 Permission Summary")
-st.write("Here's a summary of what was shared:")
+    # --- Step 2: Extract all text content (paragraphs + tables) ---
+    text_blocks = []
+    for p in doc.paragraphs:
+        text_blocks.append(p.text)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                text_blocks.append(cell.text)
 
-if camera_image or audio_file or uploaded_file or user_location:
-    st.write("**Camera:**", "✅" if camera_image else "❌ Not shared")
-    st.write("**Audio:**", "✅" if audio_file else "❌ Not shared")
-    st.write("**File:**", "✅" if uploaded_file else "❌ Not shared")
-    st.write("**Location:**", user_location if user_location else "❌ Not shared")
-    st.success("✅ Data successfully processed (temporary session only).")
-else:
-    st.info("No permissions granted yet.")
+    # --- Step 3: Detect placeholders {{field}} ---
+    all_text = "\n".join(text_blocks)
+    placeholders = sorted(list(set(re.findall(r"{{(.*?)}}", all_text))))
 
-st.markdown("---")
-st.caption(f"© {datetime.datetime.now().year} Nabeel | Secure Consent Demo")
+    if not placeholders:
+        st.warning("⚠️ No placeholders found in your template.")
+    else:
+        st.success(f"✅ Found {len(placeholders)} fields in template.")
+        st.caption(", ".join(placeholders))
 
+        st.subheader("✏️ Fill in your details")
+        user_inputs = {}
+        for field in placeholders:
+            label = field.replace("_", " ").title()
+            user_inputs[field] = st.text_area(label, placeholder=f"Enter your {label} (leave blank to remove section)")
+
+        if st.button("🚀 Generate CV"):
+            # --- Step 4: Replace placeholders ---
+            for p in doc.paragraphs:
+                for key, value in user_inputs.items():
+                    tag = f"{{{{{key}}}}}"
+                    if tag in p.text:
+                        if value.strip():
+                            p.text = p.text.replace(tag, value)
+                        else:
+                            # if user left blank → remove that line
+                            p.text = ""
+            
+            # Replace in tables too
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for key, value in user_inputs.items():
+                            tag = f"{{{{{key}}}}}"
+                            if tag in cell.text:
+                                if value.strip():
+                                    cell.text = cell.text.replace(tag, value)
+                                else:
+                                    cell.text = ""
+
+            # --- Step 5: Clean up empty lines ---
+            for p in doc.paragraphs:
+                if not p.text.strip():
+                    p.text = ""
+
+            # --- Step 6: Download final CV ---
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+
+            st.success("🎉 Your CV has been generated!")
+            st.download_button(
+                label="📥 Download CV (Word)",
+                data=buffer,
+                file_name="Generated_CV.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
