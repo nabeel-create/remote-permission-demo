@@ -4,15 +4,16 @@ from docx.shared import Inches
 from io import BytesIO
 import re
 from PIL import Image
+import pillow_avif  # 👈 enables AVIF decoding in Pillow
 
 st.set_page_config(page_title="Smart CV Builder", page_icon="🧠")
 
 st.title("🧠 Smart CV Builder")
 st.write("""
 Upload your CV Template (Word, Image, or PDF).  
-This version supports:
-- 📄 `.docx` templates with placeholders like `{{name}}`, `{{summary}}`
-- 🖼️ JPEG/PNG/PDF templates (for design)
+Supports:
+- 📄 `.docx` templates with placeholders (`{{name}}`, `{{summary}}`)
+- 🖼️ JPEG/PNG/AVIF/PDF templates
 - 👤 User photo upload (`{{photo}}`)
 - 🚫 Auto-removal of empty sections
 """)
@@ -20,12 +21,12 @@ This version supports:
 # --- Upload Template (Word, Image, or PDF) ---
 uploaded_template = st.file_uploader(
     "📄 Upload Your CV Template",
-    type=["docx", "jpg", "jpeg", "png", "pdf"],
+    type=["docx", "jpg", "jpeg", "png", "pdf", "avif"],
     help="Upload your CV design (Word, Image, or PDF)"
 )
 
 # --- Optional photo upload ---
-uploaded_photo = st.file_uploader("📸 Upload Your Photo (optional)", type=["jpg", "jpeg", "png"])
+uploaded_photo = st.file_uploader("📸 Upload Your Photo (optional)", type=["jpg", "jpeg", "png", "avif"])
 
 # ===============================
 # Handle different template types
@@ -124,19 +125,18 @@ if uploaded_template:
     # ================
     # Image or PDF Template
     # ================
-    elif file_type in ["jpg", "jpeg", "png", "pdf"]:
+    elif file_type in ["jpg", "jpeg", "png", "pdf", "avif"]:
         st.subheader("🖼️ Template Preview")
         try:
-            if file_type in ["jpg", "jpeg", "png"]:
+            if file_type in ["jpg", "jpeg", "png", "avif"]:
                 img = Image.open(uploaded_template)
                 st.image(img, caption="Template Preview", use_container_width=True)
             else:
                 st.info("📄 PDF uploaded (preview not supported here, but file accepted).")
 
-            st.info("✅ Template uploaded successfully! In this version, text auto-fill isn't available for images or PDFs.")
+            st.info("✅ Template uploaded successfully! (Auto-fill for image/PDF templates coming soon.)")
         except Exception as e:
             st.error(f"Error displaying template: {e}")
 
     else:
-        st.error("Unsupported file type. Please upload DOCX, JPG, JPEG, PNG, or PDF.")
-
+        st.error("Unsupported file type. Please upload DOCX, JPG, JPEG, PNG, PDF, or AVIF.")
