@@ -6,23 +6,26 @@ import re
 
 st.set_page_config(page_title="Smart CV Builder", page_icon="🧠")
 
-st.title("🧠 Smart CV Builder with Image Support")
+st.title("🧠 Smart CV Builder")
 st.write("""
 Upload your `.docx` CV template.  
 This version supports:
-- Embedded template images (JPEG/PNG),
-- User photo upload for `{{photo}}` placeholder,
-- Auto removal of empty sections.
+- Embedded template images (JPEG/PNG)
+- User photo upload for `{{photo}}` placeholder
+- Auto removal of empty sections
 """)
 
-# --- Upload template ---
-uploaded_file = st.file_uploader("📄 Upload CV Template (.docx)", type=["docx"])
+# --- Upload DOCX template ---
+uploaded_template = st.file_uploader("📄 Upload CV Template (.docx)", type=["docx"])
 
-if uploaded_file:
-    # Load the template safely (retaining images)
-    doc = Document(uploaded_file)
+# --- Optional photo upload (JPEG/PNG) ---
+uploaded_photo = st.file_uploader("📸 Upload Your Photo (optional)", type=["jpg", "jpeg", "png"])
 
-    # Extract text from all paragraphs and table cells
+if uploaded_template:
+    # Load the Word template safely
+    doc = Document(uploaded_template)
+
+    # Extract all text (paragraphs + table cells)
     all_text = []
     for p in doc.paragraphs:
         all_text.append(p.text)
@@ -31,10 +34,78 @@ if uploaded_file:
             for c in r.cells:
                 all_text.append(c.text)
 
-    # --- Detect placeholders {{field}} ---
-    all_text_joined = "\n".join(all_text)
-    placeholders = sorted(list(set(re.findall(r"{{(.*?)}}", all_text_joined))))
+    # --- Detect placeholders ---
+    joined_text = "\n".join(all_text)
+    placeholders = sorted(list(set(re.findall(r"{{(.*?)}}", joined_text))))
 
+    if not placeholders:
+        st.warning("⚠️ No placeholders found in this template.")
+    else:
+        st.success(f"✅ Found {len(placeholders)} placeholders.")
+        st.caption(", ".join(placeholders))
+
+        st.subheader("✏️ Enter Your Details")
+        user_inputs = {}
+
+        for field in placeholders:
+            if field.lower() != "photo":
+                user_inputs[field] = st.text_area(
+                    field.replace("_", " ").title(),
+                    placeholder=f"Enter your {field.replace('_', ' ')} (leave blank to remove)",
+                )
+
+        # --- Generate CV ---
+        if st.button("🚀 Generate CV"):
+            for p in doc.paragraphs:
+                for key, value in user_inputs.items():
+                    tag = f"{{{{{key}}}}}"
+                    if tag in p.text:
+                        if value.strip():
+                            p.text = p.text.replace(tag, value)
+                        else:
+                            p.text = ""
+
+                if "{{photo}}" in p.text.lower():
+                    p.text = ""
+                    if uploaded_photo:
+                        run = p.add_run()
+                        run.add_picture(BytesIO(uploaded_photo.read()), width=Inches(1.3))
+
+            # Handle placeholders in tables too
+            for t in doc.tables:
+                for r in t.rows:
+                    for c in r.cells:
+                        for key, value in user_inputs.items():
+                            tag = f"{{{{{key}}}}}"
+                            if tag in c.text:
+                                if value.strip():
+                                    c.text = c.text.replace(tag, value)
+                                else:
+                                    c.text = ""
+                        if "{{photo}}" in c.text.lower():
+                            c.text = ""
+                            if uploaded_photo:
+                                paragraph = c.paragraphs[0]
+                                run = paragraph.add_run()
+                                run.add_picture(BytesIO(uploaded_photo.read()), width=Inches(1.3))
+
+            # Remove empty paragraphs
+            for p in doc.paragraphs:
+                if not p.text.strip():
+                    p.text = ""
+
+            # Save to memory buffer
+            buffer = BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
+
+            st.success("🎉 Your CV has been generated successfully!")
+            st.download_button(
+                label="📥 Download CV (Word)",
+                data=buffer,
+                file_name="Generated_CV.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
     if not placeholders:
         st.warning("⚠️ No placeholders found in this template.")
     else:
